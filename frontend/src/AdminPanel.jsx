@@ -1,14 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { TextField, Button, Box, Typography, Modal, Stack } from '@mui/material';
-import { toast } from 'sonner';
+import React, { useState, useEffect } from "react";
+import { TextField, Button, Box, Typography, Modal, Stack } from "@mui/material";
+import { toast } from "sonner";
+import Papa from "papaparse"; // For CSV conversion
+import "./index.css";
+
+const TECHNICAL_EVENTS = [
+  "coding",
+  "webDesigning",
+  "gaming",
+  "quiz",
+  "productLaunch",
+  "itManager",
+  "reels",
+];
 
 const AdminPanel = () => {
   const [data, setData] = useState([]);
   const [filter, setFilter] = useState("");
+  const [selectedUser, setSelectedUser] = useState(null);
   const [open, setOpen] = useState(false);
   const [selectedRow, setSelectedRow] = useState(null);
   const [showButton, setShowButton] = useState(false);
-
 
   useEffect(() => {
     // Detect scroll position and toggle button visibility
@@ -36,21 +48,93 @@ const AdminPanel = () => {
 
 
   useEffect(() => {
-    fetch("http://localhost:5000/api/users")
+    fetch(`${import.meta.env.VITE_REACT_APP_BACKEND_ENDPOINT}/api/users`)
       .then((res) => res.json())
       .then((data) => setData(data))
       .catch((err) => console.error("Error fetching data", err));
   }, []);
 
+  // Filtering logic
+  const filteredData = data.filter((row) =>
+    [row.name, row.phone, row.collegeName, row.course, row.totalAmount, row.hodName, row.transactionId]
+      .some((field) => field?.toString().toLowerCase().includes(filter.toLowerCase()))
+  );
+
   const handleFilterChange = (event) => {
     setFilter(event.target.value);
   };
 
-  const filteredData = data.filter(row =>
-    Object.values(row).some(value =>
-      value.toString().toLowerCase().includes(filter.toLowerCase())
-    )
-  );
+  const groupEvents = (eventDetails) => {
+    let technical = {};
+    let cultural = {};
+    Object.entries(eventDetails || {}).forEach(([event, participants]) => {
+      if (TECHNICAL_EVENTS.includes(event)) {
+        technical[event] = participants;
+      } else {
+        cultural[event] = participants;
+      }
+    });
+    return { technical, cultural };
+  };
+
+  const renderEventDetails = (eventDetails) => {
+    const { technical, cultural } = groupEvents(eventDetails);
+
+    const renderGroup = (group, title) =>
+      Object.keys(group).length > 0 && (
+        <>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+            {title}:
+          </Typography>
+          {Object.entries(group).map(([eventName, participants]) => (
+            <Typography key={eventName} sx={{ fontSize: "0.9em" }}>
+              {eventName}: {Object.values(participants).join(", ")}
+            </Typography>
+          ))}
+        </>
+      );
+
+    return (
+      <>
+        {renderGroup(technical, "Technical Events")}
+        {renderGroup(cultural, "Cultural Events")}
+      </>
+    );
+  };
+
+  const handleDownloadCSV = () => {
+    const csvData = data.map((row) => {
+      const { technical, cultural } = groupEvents(row.eventDetails);
+
+      return {
+        Name: row.name,
+        Phone: row.phone,
+        College: row.collegeName,
+        Course: row.course,
+        "HOD Name": row.hodName,
+        "HOD Phone": row.hodPhone,
+        Amount: row.totalAmount,
+        "Transaction ID": row.transactionId,
+        "Technical Events": Object.entries(technical)
+          .map(([event, participants]) => `${event}: ${Object.values(participants).join(", ")}`)
+          .join(" | "),
+        "Cultural Events": Object.entries(cultural)
+          .map(([event, participants]) => `${event}: ${Object.values(participants).join(", ")}`)
+          .join(" | "),
+      };
+    });
+
+    const csv = Papa.unparse(csvData);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute("download", "medha_admin_data.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast.success("CSV downloaded successfully!");
+  };
 
   const handleOpen = (row) => {
     setSelectedRow(row);
@@ -71,8 +155,7 @@ const AdminPanel = () => {
 
   const handleSubmit = (event) => {
     event.preventDefault();
-
-    // Sending updated data to the backend
+  
     fetch(`http://localhost:5000/api/users/${selectedRow._id}`, {
       method: 'PUT',
       headers: {
@@ -84,22 +167,22 @@ const AdminPanel = () => {
         phone: selectedRow.phone,
         collegeName: selectedRow.collegeName,
         course: selectedRow.course,
+        eventDetails: selectedRow.eventDetails, // Include event details
       }),
     })
       .then(response => response.json())
       .then(updatedUser => {
-        // Update the local state with the updated user data
         setData(prevData =>
           prevData.map(user =>
             user._id === updatedUser._id ? updatedUser : user
           )
         );
-        handleClose(); // Close the modal after successful update
-        toast.success('Data Updated Successfully!')
+        handleClose();
+        toast.success('Data Updated Successfully!');
       })
       .catch((err) => console.error("Error updating user data", err));
   };
-
+  
   const handleDelete = () => {
     fetch(`http://localhost:5000/api/users/${selectedRow._id}`, {
       method: 'DELETE',
@@ -112,52 +195,12 @@ const AdminPanel = () => {
       .catch((err) => console.error("Error deleting user", err));
   };
 
-  const downloadExcel = () => {
-    const csvContent = data
-      .map((row) => Object.values(row).join(","))
-      .join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "data.csv";
-    link.click();
-  };
-
-  // Function to render eventDetails as a string
-  const renderEventDetails = (eventDetails) => {
-    return Object.entries(eventDetails).map(([eventName, participants]) => {
-      const participantsList = Object.entries(participants)
-        .map(([participantKey, participant]) => `${participant} (${participantKey})`)
-        .join(', '); // Join participants with commas
-      return `${eventName}: ${participantsList}`;
-    }).join(' | '); // Join events with a pipe symbol
-  };
 
   return (
     <div className="admin-panel">
       <header className="header">
-        <Typography variant="h5" color="white">Medha Admin Panel</Typography>
-        <Button
-          variant="outlined"
-          onClick={downloadExcel}
-          sx={{
-            backgroundColor: 'white',
-            color: 'black',
-            border: '1px solid #333',
-            padding: '7px 15px',
-            borderRadius: '6px',
-            fontWeight: '600',
-            transition: 'all 0.3s ease',
-            '&:hover': {
-              backgroundColor: '#f3f3f3',
-              borderColor: '#007bff',
-            },
-            '&:focus': {
-              outline: 'none',
-              borderColor: '#007bff',
-            },
-          }}
-        >
+        <Typography variant="h5">Medha Admin Panel</Typography>
+        <Button variant="outlined" onClick={handleDownloadCSV}>
           Download Data (CSV)
         </Button>
       </header>
@@ -192,36 +235,37 @@ const AdminPanel = () => {
         />
       </Box>
 
-      <main style={{ maxWidth: "100%", overflowX: "auto", position: "relative" }}>
-        <div style={{ overflowX: "auto", maxWidth: "100%" }}>
-          <table className="data-table">
-            <thead className="table-head">
-              <tr>
-                {filteredData.length > 0 && Object.keys(filteredData[0]).map((key) => (
-                  <th key={key}>{key}</th>
-                ))}
-                <th>Event Details</th>
+      <main style={{ overflowX: "auto" }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Phone</th>
+              <th>College</th>
+              <th>Course</th>
+              <th>HOD Name</th>
+              <th>HOD Phone no</th>
+              <th>Amount</th>
+              <th>Event Details</th>
+              <th>Transaction ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredData.map((row, index) => (
+              <tr key={index} onClick={() => handleOpen(row)}>
+                <td>{row.name}</td>
+                <td>{row.phone}</td>
+                <td>{row.collegeName}</td>
+                <td>{row.course}</td>
+                <td>{row.hodName}</td>
+                <td>{row.hodPhone}</td>
+                <td>{row.totalAmount}</td>
+                <td style={{ minWidth: "300px" }}>{renderEventDetails(row.eventDetails)}</td>
+                <td>{row.transactionId}</td>
               </tr>
-            </thead>
-            <tbody>
-              {filteredData.map((row, index) => (
-                <tr key={index} onClick={() => handleOpen(row)} style={{ cursor: 'pointer' }}>
-                  {Object.values(row).map((value, idx) => (
-                    <td key={idx}>
-                      {typeof value === "object" ?
-                        JSON.stringify(value, null, 2) :
-                        value
-                      }
-                    </td>
-                  ))}
-                  <td>
-                    {row.eventDetails ? renderEventDetails(row.eventDetails) : ''}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </main>
 
       {/* Edit/Delete Modal */}
@@ -407,57 +451,6 @@ const AdminPanel = () => {
           </form>
         </Box>
       </Modal>
-
-      {showButton && (
-        <div
-          onClick={scrollToTop}
-          style={{
-            position: 'fixed',
-            bottom: '20px',
-            right: '20px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'white',
-            color: 'black',
-            borderRadius: '50%',
-            padding: '12px',
-            fontSize: '18px',
-            width: '50px',  // Fixed width and height for perfect roundness
-            height: '50px',
-            boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)',
-            cursor: 'pointer',  // Adds pointer cursor on hover
-            '&:hover': {
-              backgroundColor: 'rgba(255, 255, 255, 0.8)',  // Hover effect
-            },
-            transition: 'background-color 0.3s',  // Smooth transition for hover effect
-          }}
-        >
-          <i className="fi fi-rr-arrow-small-up" style={{
-            position: 'fixed',
-            bottom: '20px',
-            right: '20px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'white',
-            color: 'black',
-            borderRadius: '50%',
-            padding: '12px',
-            fontSize: '18px',
-            width: '50px',  // Fixed width and height for perfect roundness
-            height: '50px',
-            boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)',
-            cursor: 'pointer',  // Adds pointer cursor on hover
-            '&:hover': {
-              backgroundColor: 'rgba(255, 255, 255, 0.8)',  // Hover effect
-            },
-            transition: 'background-color 0.3s',
-            fontSize: '30px'  // Smooth transition for hover effect
-          }}></i>
-        </div>
-
-      )}
     </div>
   );
 };

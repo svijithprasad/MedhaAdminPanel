@@ -1,15 +1,18 @@
-import AdminPanel from './AdminPanel'
-import "./index.css"
-import { Toaster, toast } from 'sonner'
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import Login from "./auth/login";
+import AdminPanel from "./AdminPanel";
+import ProtectedRoute from "./ProtectedRoute";
 
-function App() {
 
-  return (
-    <>
-      <Toaster position='bottom-center' />
-      <AdminPanel />
-    </>
-  )
-}
+const App = () => (
+  <Router>
+    <Routes>
+      <Route path="/" element={<Login />} />
+      <Route element={<ProtectedRoute />}>
+        <Route path="/panel" element={<AdminPanel />} />
+      </Route>
+    </Routes>
+  </Router>
+);
 
-export default App
+export default App;
